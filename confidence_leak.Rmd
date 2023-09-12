@@ -1,0 +1,135 @@
+---
+title: "Confidence leak"
+date: '2023-09-12'
+output:
+  md_document:
+    variant: markdown_github
+    toc: true
+    toc_depth: 6
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+library("haven")
+library("dplyr")
+library("psycho")
+library("ggplot2")
+library(lme4)
+library(lmerTest)
+library(car)
+# define a functin
+
+  # add zero if we have none
+  add_zero<-function(vector){
+    # function that add zero if it finds any cell for which we don't have 
+    # the number of confidence
+  for (n in 1:3){
+  if (is.na(vector[as.character(n)])){
+    
+    vector[[as.character(n)]]<-0
+    
+  }
+  }
+    return(vector)
+  }
+```
+
+### Documentation
+In this file, we are preparing the data for confidence leak analysis
+
+
+```{r cars}
+# get the data first
+
+# retrieve the long dataset
+df_all<-read_spss( "FaceProfession_ses01.sav")
+
+# select only recognition task
+df_all<-df_all[df_all$subtask==4,]
+
+# select the variables of interest
+VoI<-c("vpid" ,"age.beha.cor", "secondprofessiontypestr", "response2str",
+       "response2correct", "rating")
+
+df_all<-df_all[, VoI]
+
+# change the names
+names(df_all)[c(2, 3, 4, 5)]<-c("age", "type", "response", "accuracy")
+
+# crate the age variable
+hist(df_all$age)
+
+# The maximum age for YA is 46, so we can use the following heuristics to
+# assign age group
+df_all$agegroup<-ifelse(df_all$age<50,"YA", "OA")
+
+# check how many participants and if we have the same trials by participant
+countT1<- df_all %>% 
+          group_by(vpid)%>%
+          tally()
+
+# check how many trials we have
+unique(countT1$n)
+
+# now create a variable indicating the rating on the previous trial
+df_all$prev_rating<-NA
+
+participants<-unique(df_all$vpid)
+
+# we need a list to append participants' data
+list_all<-list()
+
+# loop through participants to create the files
+for (p in 1:length(participants)){
+  
+  # subset the file
+  curr_df<-df_all[df_all$vpid==participants[p], ]
+  
+  # loop throught the trials of this participant
+  for (t in 1:nrow(curr_df)){
+    
+    if (t>1){
+      curr_df$prev_rating[t]<-curr_df$rating[t-1]
+    }
+    
+  }
+  
+  # assign the df to the list
+  list_all[[p]]<-curr_df
+  
+}
+
+# merge all the files
+all_df<-do.call(rbind, list_all)
+
+```
+
+# plot by age group
+```{r}
+ggplot(all_df, aes(x =prev_rating, y = rating))+
+   geom_line(stat="smooth",method = "lm",  
+             formula=y~x, alpha=0.1)+
+    aes(colour = factor(vpid), alpha=0.1)+
+    geom_smooth(method="lm",formula=y~x,
+                colour="black", se=T)+
+  facet_grid(. ~ agegroup)+theme_classic()+
+  ggtitle("confidence leak by age group")+
+  theme(legend.position="none")+
+  ylim(1,3)
+
+```
+analyze
+```{r}
+all_df$rating<-as.numeric(all_df$rating)
+all_df$vpid<-as.character(all_df$vpid)
+
+conf_leak_mod<-lmer(rating~prev_rating*agegroup+(prev_rating|vpid), data = all_df,
+                    control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=100000)))
+
+summary(conf_leak_mod)
+Anova(conf_leak_mod)
+```
+

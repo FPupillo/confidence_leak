@@ -4,7 +4,7 @@ Descriptions of the files of this repository
 Files used to knit the markdown file
 
 ### confidence_leak.md
-Markdown file that can be visualised online
+Markdown file. To visualize code and output online. 
 
 ### confidence_leak.Rmd
 R markdown file
